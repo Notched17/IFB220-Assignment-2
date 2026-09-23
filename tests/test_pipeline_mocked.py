@@ -31,7 +31,7 @@ TOPICS_DIR = Path(__file__).resolve().parent.parent / "topics"
 def make_settings(tmp_path: Path, **overrides) -> Settings:
     defaults = dict(
         api_key="test-key",
-        azure_endpoint="https://example.invalid",
+        base_url="https://example.invalid",
         api_version="2024-02-15-preview",
         chat_deployment="gpt-4.1-mini",
         embedding_deployment="text-embedding-ada-002",

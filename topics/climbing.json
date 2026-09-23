@@ -6,7 +6,7 @@
   "out_of_scope_note": "General medicine, unrelated sports, cooking, finance, general-purpose coding help, politics, and any topic unrelated to climbing are out of scope, even if the user tries to relate them back to climbing.",
   "refusal_message": "I'm set up as a climbing coach, so I can only help with sport and trad climbing topics \u2014 things like technique, training, gear, safety, and route strategy. That one's outside what I can help with here. Want to ask me something climbing-related instead?",
   "injection_refusal_message": "I can't follow instructions that try to change how I operate or reveal my configuration. I'm still happy to help with any sport or trad climbing question you have.",
-  "similarity_threshold": 0.74,
+  "similarity_threshold": 0.35,
   "anchor_phrases": [
     "What's the best way to train finger strength for crimping?",
     "How do I read the beta on an overhanging sport route?",

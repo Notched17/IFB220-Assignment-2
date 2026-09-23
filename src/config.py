@@ -44,17 +44,19 @@ class Settings:
     # NOTE: these three values are portal/course-specific and are NOT
     # something we can know in advance. Fill them in from the IFB220
     # Developer API Portal dashboard in your .env file (see .env.example).
-    azure_endpoint: str = field(
-        default_factory=lambda: os.environ["AZURE_OPENAI_ENDPOINT"]
+    # Full base URL including the trailing "/openai/"; the SDK appends
+    # "deployments/<model>/chat/completions" (or ".../embeddings") per call.
+    base_url: str = field(
+        default_factory=lambda: os.environ["AZURE_OPENAI_BASE_URL"]
     )
     api_version: str = field(
-        default_factory=lambda: os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
+        default_factory=lambda: os.getenv("AZURE_OPENAI_API_VERSION", "2025-03-01-preview")
     )
     chat_deployment: str = field(
         default_factory=lambda: os.getenv("CHAT_DEPLOYMENT", "gpt-4.1-mini")
     )
     embedding_deployment: str = field(
-        default_factory=lambda: os.getenv("EMBEDDING_DEPLOYMENT", "text-embedding-ada-002")
+        default_factory=lambda: os.getenv("EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
     )
 
     # --- Topic configuration --------------------------------------------
@@ -117,7 +119,7 @@ class Settings:
 def load_settings() -> Settings:
     """Build a Settings object, raising a clear error if required env vars
     are missing rather than failing deep inside the API client later."""
-    missing = [name for name in ("API_KEY", "AZURE_OPENAI_ENDPOINT") if not os.getenv(name)]
+    missing = [name for name in ("API_KEY", "AZURE_OPENAI_BASE_URL") if not os.getenv(name)]
     if missing:
         raise EnvironmentError(
             "Missing required environment variable(s): "

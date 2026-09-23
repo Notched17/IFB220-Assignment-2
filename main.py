@@ -7,7 +7,7 @@ Usage:
 
 Environment variables (see .env.example):
     API_KEY                 (required) IFB220 Developer API Portal key
-    AZURE_OPENAI_ENDPOINT   (required) IFB220 Developer API Portal endpoint
+    AZURE_OPENAI_BASE_URL   (required) IFB220 portal base URL, ending in /openai/
     TOPIC_CONFIG            (optional) path to a topics/*.json file;
                              defaults to topics/climbing.json.
                              Point this at topics/motor_vehicles.json or

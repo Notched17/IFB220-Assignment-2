@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+logs/*.jsonl
+logs/*.log
+topics/cache/
+.venv/
+
+# local / OS noise
+.DS_Store
+node_modules/

@@ -45,7 +45,7 @@ source .venv/bin/activate        # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
 cp .env.example .env
-# edit .env: fill in API_KEY and AZURE_OPENAI_ENDPOINT from the
+# edit .env: fill in API_KEY and AZURE_OPENAI_BASE_URL from the
 # IFB220 Developer API Portal dashboard
 
 python main.py

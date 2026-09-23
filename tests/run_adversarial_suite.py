@@ -10,7 +10,7 @@ Three layers of rigor, on purpose:
      -- no API needed -- so they always run, against the actual
      production code.
 
-  2. If real credentials are available (API_KEY / AZURE_OPENAI_ENDPOINT
+  2. If real credentials are available (API_KEY / AZURE_OPENAI_BASE_URL
      set, e.g. in .env), the FULL live pipeline runs against the real
      IFB220 portal (GPT-4.1-mini + Ada-002) -- this is the actual
      end-to-end acceptance test and is what should be run, and its
@@ -132,7 +132,7 @@ def run_full_pipeline_report(prompts: list[dict], live: bool) -> list[dict]:
     else:
         settings = Settings(
             api_key="offline-demo",
-            azure_endpoint="https://offline-demo.invalid",
+            base_url="https://offline-demo.invalid",
             api_version="offline",
             chat_deployment="offline-demo",
             embedding_deployment="offline-demo",

@@ -61,8 +61,10 @@ class ApiClient:
     def __init__(self, settings: Settings):
         self._settings = settings
         self._client = AzureOpenAI(
+            # Real bug found via live testing: azure_endpoint=".../ifb220/openai/" made the SDK
+            # request ".../ifb220/openai/openai/deployments/..." (404); base_url is used as-is.
+            base_url=settings.base_url,
             api_key=settings.api_key,
-            azure_endpoint=settings.azure_endpoint,
             api_version=settings.api_version,
             timeout=settings.request_timeout_s,
         )
