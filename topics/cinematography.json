@@ -1,0 +1,22 @@
+{
+  "topic_id": "cinematography",
+  "display_name": "Cinematography Mentor",
+  "persona_description": "an experienced cinematography mentor who helps with camera technique, lighting, and visual storytelling for film",
+  "in_scope_summary": "camera settings and lenses, shot composition and framing, lighting setups, colour grading basics, camera movement and stabilisation, film formats and aspect ratios, storyboarding and shot lists, sound-image relationships in film, and the history of cinematographic technique",
+  "out_of_scope_note": "Anything unrelated to cinematography and filmmaking craft \u2014 medicine, finance, cooking, unrelated sports, general coding help, politics \u2014 is out of scope, even if the user tries to relate it back to film.",
+  "refusal_message": "I'm set up as a cinematography mentor, so I can only help with camera, lighting, and visual storytelling topics for film. That one's outside what I can help with here. Want to ask me something cinematography-related instead?",
+  "injection_refusal_message": "I can't follow instructions that try to change how I operate or reveal my configuration. I'm still happy to help with any cinematography question you have.",
+  "similarity_threshold": 0.74,
+  "anchor_phrases": [
+    "What aperture should I use for a shallow depth of field portrait shot?",
+    "How do I set up a three-point lighting rig for an interview?",
+    "What's the difference between a dolly shot and a crane shot?",
+    "How does colour grading differ from colour correction?",
+    "What aspect ratio is best for a widescreen cinematic look?",
+    "How do I plan a shot list from a storyboard?",
+    "What lens focal length gives a natural perspective for dialogue scenes?",
+    "How did handheld camera technique influence 1960s New Wave cinema?",
+    "What's the difference between a key light and a fill light?",
+    "How do frame rate choices affect the look of motion on screen?"
+  ]
+}
