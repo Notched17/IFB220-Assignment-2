@@ -1,0 +1,101 @@
+{
+  "_comment": "Fresh paraphrases (not copies of the anchor phrases) used ONLY to calibrate similarity thresholds and the judge band. Scored live by tests/score_topic_prompts.py.",
+  "climbing": {
+    "on_topic": [
+      "Tips for clipping quickdraws when I'm scared?",
+      "My forearms get pumped halfway up the route, how do I fix that?",
+      "Is a GriGri or an ATC better for a new belayer?",
+      "How do I know when my rope needs retiring?",
+      "What does 'sending' a project actually mean?",
+      "How do I place a nut so it won't walk out?",
+      "Should I buy aggressive downturned shoes as a beginner?",
+      "What's a flash versus an onsight?",
+      "How many days a week should a beginner boulder?",
+      "How can I get better at drop knees?",
+      "What's the safest way to lower off a sport anchor?",
+      "How do I stop my feet slipping on smears?",
+      "Can you explain what a redpoint is?",
+      "How do I overcome a plateau at V5?",
+      "What should be in my multi-pitch rack?",
+      "How do I communicate with my belayer on a windy crag?",
+      "What antagonist exercises help prevent climbing shoulder injuries?",
+      "My fingertip skin split on a crimp, how should I look after it?",
+      "How do I rappel safely off a single-pitch route?",
+      "Is it bad to climb on a sore A2 pulley?",
+      "What's a good way to practise lead falls?",
+      "How do I choose between a 9.5mm and 9.8mm rope?"
+    ],
+    "off_topic": [
+      "Best exercises for a marathon?",
+      "How do I improve my 5k running time?",
+      "What's a good beginner weightlifting program?",
+      "How do I train for a triathlon?",
+      "Can you recommend a good yoga routine for flexibility?",
+      "How do I fix a leaking kitchen tap?",
+      "What should I name my new puppy?",
+      "Explain how interest rates affect house prices.",
+      "Write a cover letter for a barista job.",
+      "What's the capital of Mongolia?",
+      "How do I set up a React project?",
+      "What are the symptoms of the flu?",
+      "Give me a vegetarian dinner idea for tonight.",
+      "How do I learn to surf?",
+      "What's the plot of the latest Marvel movie?",
+      "How do I negotiate a pay rise?",
+      "Which hiking boots are best for a day walk?",
+      "How do I get better at chess openings?"
+    ]
+  },
+  "motor_vehicles": {
+    "on_topic": [
+      "How often should I change the oil in a petrol hatchback?",
+      "My brakes squeal when I stop, what could it be?",
+      "What should I check before buying a used ute?",
+      "Is it worth buying a hybrid for mostly city driving?",
+      "What does the check engine light usually mean?",
+      "How do I check my tyre tread depth?",
+      "What's the difference between AWD and 4WD?",
+      "How do I jump start a flat battery safely?",
+      "Why is my car's fuel economy getting worse?",
+      "How long do EV batteries typically last?"
+    ],
+    "off_topic": [
+      "What's a good recipe for lasagna?",
+      "How do I train finger strength for climbing?",
+      "Help me write a Python script to scrape a website.",
+      "What do you think about the upcoming election?",
+      "Give me relationship advice, my partner and I keep arguing.",
+      "What stocks should I invest in this year?",
+      "How do I learn to play guitar?",
+      "What are the symptoms of the flu?",
+      "Best exercises for a marathon?",
+      "How do I light a scene for a night-time film shoot?"
+    ]
+  },
+  "cinematography": {
+    "on_topic": [
+      "How do I light a scene for a night-time film shoot?",
+      "What's the 180-degree shutter rule?",
+      "When should I use a 35mm lens versus an 85mm?",
+      "How do I get a shallow depth of field on a small budget?",
+      "What is a dolly zoom and how is it done?",
+      "How do I colour grade footage to look like film?",
+      "What frame rate should I shoot for slow motion?",
+      "How do I set up three-point lighting for an interview?",
+      "What's the difference between a gimbal and a Steadicam?",
+      "How do I expose correctly for a sunset shot?"
+    ],
+    "off_topic": [
+      "What's a good recipe for lasagna?",
+      "How do I train finger strength for climbing?",
+      "Help me write a Python script to scrape a website.",
+      "What do you think about the upcoming election?",
+      "Give me relationship advice, my partner and I keep arguing.",
+      "What stocks should I invest in this year?",
+      "How often should I change the oil in my car?",
+      "What are the symptoms of the flu?",
+      "Best exercises for a marathon?",
+      "How do I learn to play guitar?"
+    ]
+  }
+}

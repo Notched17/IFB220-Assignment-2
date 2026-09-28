@@ -1,0 +1,6 @@
+{"timestamp": 1790568340.304978, "session_id": "4c7b5706-19b7-405f-9178-864e605d2aaa", "type": "embedding", "tokens": 9}
+{"timestamp": 1790568340.307041, "session_id": "4c7b5706-19b7-405f-9178-864e605d2aaa", "type": "chat_call_avoided", "reason": "off_topic_input"}
+{"timestamp": 1790568343.713834, "session_id": "9198811b-1f30-411b-8921-336017f3a18f", "type": "chat", "prompt_tokens": 857, "completion_tokens": 53}
+{"timestamp": 1790568348.351121, "session_id": "d0970cc2-aa30-48b6-82cf-9c4baf5c5ce2", "type": "chat_call_avoided", "reason": "injection:override_instructions"}
+{"timestamp": 1790568389.023416, "session_id": "c3fb0a1b-c083-4463-b1b8-201d07d002a5", "type": "judge", "prompt_tokens": 627, "completion_tokens": 28}
+{"timestamp": 1790568394.796064, "session_id": "d8105bff-5ef0-4100-aeda-3e7fac6bdd57", "type": "chat_call_avoided", "reason": "off_topic_judge"}

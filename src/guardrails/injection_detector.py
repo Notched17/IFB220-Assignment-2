@@ -50,18 +50,50 @@ def _near(text: str, group_a: list[str], group_b: list[str], window: int) -> boo
 
 
 # --- Rule definitions ---------------------------------------------------
+# Word lists are data: extending coverage means adding a pattern here, not
+# writing a new rule. Checks stay order-agnostic via _near().
 
 _OVERRIDE_VERBS = [r"\bignore\b", r"\bdisregard\b", r"\bforget\b", r"\boverride\b"]
 _OVERRIDE_TARGETS = [
-    r"\bprevious\b", r"\bprior\b", r"\babove\b", r"\ball\b",
-    r"\binstructions?\b", r"\brules?\b", r"\bprompt\b", r"\brestrictions?\b",
+    r"\bprevious\b", r"\bprior\b", r"\babove\b",
+    r"\binstructions?\b", r"\brules?\b(?!\s+of\s+thumb)", r"\bprompt\b", r"\brestrictions?\b",
 ]
 
-_EXTRACTION_VERBS = [r"\breveal\b", r"\bshow\b", r"\bprint\b", r"\brepeat\b", r"\boutput\b", r"\bdisplay\b"]
+# Same attack in Spanish / French / German ("Ignora todas las instrucciones
+# anteriores", "Ignorez les instructions précédentes", "Ignoriere alle
+# vorherigen Anweisungen").
+_FOREIGN_OVERRIDE_VERBS = [
+    r"\bignora\b", r"\bignorar\b", r"\bignoren\b", r"\bolvida\b", r"\bolvidar\b",
+    r"\bignorez\b", r"\bignorer\b", r"\boubliez\b", r"\boublie\b",
+    r"\bignoriere\b", r"\bignorieren\b", r"\bvergiss\b", r"\bvergessen\b",
+]
+_FOREIGN_OVERRIDE_TARGETS = [
+    r"\binstrucciones\b", r"\breglas\b", r"\banteriores\b", r"\bindicaciones\b",
+    r"\binstructions\b", r"\bconsignes\b", r"\br[èe]gles\b", r"\bpr[ée]c[ée]dentes?\b",
+    r"\banweisungen\b", r"\bregeln\b", r"\bvorherigen\b",
+]
+
+_EXTRACTION_VERBS = [
+    r"\breveal\b", r"\bshow\b", r"\bprint\b", r"\brepeat\b", r"\boutput\b", r"\bdisplay\b",
+    r"\bsummari[sz]e\b", r"\blist\b", r"\bdescribe\b", r"\bexplain\b", r"\btranslate\b",
+    r"\brecite\b", r"\bdump\b", r"\btell\s+me\b", r"\bwrite\s+out\b", r"\bspell\s+out\b",
+]
+# Targets are anchored to the ASSISTANT's own setup ("your rules", "the
+# rules you were set up with"), so ordinary requests like "explain the
+# rules of bouldering comps" or "show me the instructions for a
+# figure-eight" are not flagged.
+_SETUP_NOUNS = r"(instructions?|rules?|prompt|configuration|config|guidelines|directives|programming)"
 _EXTRACTION_TARGETS = [
-    r"\bsystem\s+prompt\b", r"\binstructions?\b", r"\brules?\b", r"\bconfiguration\b",
+    r"\bsystem\s+(prompt|message|instructions?)\b",
     r"\bwords?\s+above\b", r"\btext\s+above\b", r"\beverything\s+above\b",
     r"\byou\s+were\s+given\b", r"\bwere\s+you\s+given\b", r"\byou\s+given\b",
+    r"\byour\s+(\w+\s+)?" + _SETUP_NOUNS + r"\b",
+    r"\b" + _SETUP_NOUNS + r"\s+(that\s+)?you(\s+were|\s+have\s+been|'ve\s+been|\s+are|'re)\b",
+]
+
+_TOLD_PATTERNS = [
+    r"\bwhat\s+(were|have)\s+you\s+(been\s+)?(told|instructed|asked\s+to\s+do)\b",
+    r"\bhow\s+(were|have)\s+you\s+(been\s+)?(set\s+up|configured|instructed|programmed)\b",
 ]
 
 _PERSONA_VERBS = [r"\bact\b", r"\bpretend\b", r"\broleplay\b", r"\bimagine\b"]
@@ -79,6 +111,14 @@ _UNRESTRICTED_HINTS = [
 
 def _rule_override_instructions(text: str) -> bool:
     return _near(text, _OVERRIDE_VERBS, _OVERRIDE_TARGETS, window=40)
+
+
+def _rule_foreign_override(text: str) -> bool:
+    return _near(text, _FOREIGN_OVERRIDE_VERBS, _FOREIGN_OVERRIDE_TARGETS, window=60)
+
+
+def _rule_what_were_you_told(text: str) -> bool:
+    return any(re.search(p, text, re.IGNORECASE) for p in _TOLD_PATTERNS)
 
 
 def _rule_new_instructions_claim(text: str) -> bool:
@@ -127,6 +167,7 @@ def _rule_prompt_extraction(text: str) -> bool:
 
 _RULES: list[tuple[str, Callable[[str], bool]]] = [
     ("override_instructions", _rule_override_instructions),
+    ("foreign_language_override", _rule_foreign_override),
     ("new_instructions_claim", _rule_new_instructions_claim),
     ("fake_system_role", _rule_fake_system_role),
     ("authority_claim", _rule_authority_claim),
@@ -134,6 +175,7 @@ _RULES: list[tuple[str, Callable[[str], bool]]] = [
     ("developer_mode", _rule_developer_mode),
     ("known_jailbreak_persona", _rule_known_jailbreak_persona),
     ("prompt_extraction", _rule_prompt_extraction),
+    ("what_were_you_told", _rule_what_were_you_told),
 ]
 
 

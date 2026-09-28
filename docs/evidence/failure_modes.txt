@@ -1,0 +1,45 @@
+# Live failure-handling runs (2026-09-28T03:24Z). Tutor-like copy, env -i, run from another directory.
+# The real API key is never shown; run 1 uses a deliberately fake key.
+
+## 1. Invalid API key (fake key in .env)
+$  python main.py   (stdin: How do I belay safely?|/quit|)
+=== Climbing Coach ===
+Ask me anything within scope. Type /quit to exit, /usage for usage stats.
+
+You: Climbing Coach: I'm having trouble reaching the AI service right now. Please try again in a moment.
+
+You: 
+Session usage summary: chat calls: 0 (of which topic-judge: 0) | embedding calls: 0 | prompt tokens: 0 | completion tokens: 0 | embedding tokens: 0 | chat calls avoided by guardrails: 0 | estimated cost: $0.00000 (illustrative rates, see app_config.json)
+[exit code 0, 1s wall time]
+--- logs/errors.log
+2026-09-28 13:24:19,791 ERROR embedding call failed on input relevance check: API returned 401: Error code: 401 - {'statusCode': 401, 'message': 'Access denied due to invalid subscription key. Make sure to provide a valid key for an active subscription.'}
+--- logs/audit.jsonl
+{"timestamp": 1790565859.791858, "session_id": "8a0a032a-bbd9-4ca7-a5de-75c5228fd0e9", "turn_index": 1, "user_text": "How do I belay safely?", "action": "error", "layers": {"sanitizer": {"truncated": false, "had_control_chars": false, "format_chars_removed": 0, "suspicious_encoding": false, "collapsed_scanned": false, "base64_decoded": 0, "base64_decision": "none"}, "injection_detector": {"matched": false, "rule": null, "view": null}}, "latency_ms": 788.2, "error": "API returned 401: Error code: 401 - {'statusCode': 401, 'message': 'Access denied due to invalid subscription key. Make sure to provide a valid key for an active subscription.'}"}
+
+## 2. Request timeout of 1 ms (valid key; 3 attempts with 1 s + 2 s backoff)
+$ REQUEST_TIMEOUT_S=0.001 python main.py   (stdin: How do I belay safely?|/usage|/quit|)
+(note: settings overridden by environment: REQUEST_TIMEOUT_S)
+=== Climbing Coach ===
+Ask me anything within scope. Type /quit to exit, /usage for usage stats.
+
+You: Climbing Coach: I'm having trouble reaching the AI service right now. Please try again in a moment.
+
+You: [usage] chat calls: 0 (of which topic-judge: 0) | embedding calls: 0 | prompt tokens: 0 | completion tokens: 0 | embedding tokens: 0 | chat calls avoided by guardrails: 0 | estimated cost: $0.00000 (illustrative rates, see app_config.json)
+You: 
+Session usage summary: chat calls: 0 (of which topic-judge: 0) | embedding calls: 0 | prompt tokens: 0 | completion tokens: 0 | embedding tokens: 0 | chat calls avoided by guardrails: 0 | estimated cost: $0.00000 (illustrative rates, see app_config.json)
+[exit code 0, 4s wall time]
+--- logs/errors.log
+2026-09-28 13:24:23,180 ERROR embedding call failed on input relevance check: Request timed out. (after 3 attempts)
+--- logs/audit.jsonl
+{"timestamp": 1790565863.181438, "session_id": "b415c8cd-9bf8-48e9-9353-8bb0a83e6304", "turn_index": 1, "user_text": "How do I belay safely?", "action": "error", "layers": {"sanitizer": {"truncated": false, "had_control_chars": false, "format_chars_removed": 0, "suspicious_encoding": false, "collapsed_scanned": false, "base64_decoded": 0, "base64_decision": "none"}, "injection_detector": {"matched": false, "rule": null, "view": null}}, "latency_ms": 3040.1, "error": "Request timed out. (after 3 attempts)"}
+
+## 3. Bad topic_config path (valid key)
+$ TOPIC_CONFIG=topics/does_not_exist.json python main.py   (stdin: /quit|)
+Topic configuration error: could not load /private/tmp/claude-501/-Users-charliea-Documents-QUT-Courses-IFB220-IFB220-Assignment-2/a1845b7a-7565-4228-a7b4-87c54517ecca/scratchpad/failcopy/project/topics/does_not_exist.json: [Errno 2] No such file or directory: '/private/tmp/claude-501/-Users-charliea-Documents-QUT-Courses-IFB220-IFB220-Assignment-2/a1845b7a-7565-4228-a7b4-87c54517ecca/scratchpad/failcopy/project/topics/does_not_exist.json'
+[exit code 1, 0s wall time]
+
+## 4. No API_KEY at all (no .env, empty environment)
+$  python main.py   (stdin: /quit|)
+Configuration error: API_KEY is not set. Put your IFB220 Developer API Portal key in the environment, or in a file called .env in the project folder (/private/tmp/claude-501/-Users-charliea-Documents-QUT-Courses-IFB220-IFB220-Assignment-2/a1845b7a-7565-4228-a7b4-87c54517ecca/scratchpad/failcopy/project) containing one line:  API_KEY=your-key-here
+[exit code 1, 0s wall time]
+

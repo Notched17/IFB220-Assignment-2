@@ -2,8 +2,9 @@
 Thin wrapper around the IFB220 Developer API Portal endpoints.
 
 Responsibilities:
-  * one place that knows how to call chat completions (GPT-4.1-mini) and
-    embeddings (Ada-002)
+  * one place that knows how to call chat completions (gpt-4.1-mini) and
+    embeddings (text-embedding-3-small; the brief names Ada-002, but the
+    portal returns 404 for that deployment)
   * retries with backoff for transient failures (timeouts, 429s, 5xxs)
   * translates SDK-level exceptions into the small set of exceptions the
     rest of the app needs to handle (ApiTimeoutError, ApiRateLimitError,
@@ -44,6 +45,11 @@ class ApiRateLimitError(ApiError):
     pass
 
 
+class ApiContentFilterError(ApiError):
+    """The portal's own (Azure) content filter blocked the request. This is
+    not an outage, so callers treat it as a refusal, not an error."""
+
+
 @dataclass
 class ChatResult:
     content: str
@@ -64,18 +70,23 @@ class ApiClient:
             # Real bug found via live testing: azure_endpoint=".../ifb220/openai/" made the SDK
             # request ".../ifb220/openai/openai/deployments/..." (404); base_url is used as-is.
             base_url=settings.base_url,
-            api_key=settings.api_key,
+            api_key=settings.api_key.strip(),
             api_version=settings.api_version,
             timeout=settings.request_timeout_s,
+            max_retries=0,  # retries are handled (and counted) by _with_retries below
         )
 
     # ------------------------------------------------------------------
-    def chat_complete(self, messages: list[dict], *, temperature: float = 0.4) -> ChatResult:
+    def chat_complete(
+        self, messages: list[dict], *, temperature: float = 0.4, max_tokens: int | None = None
+    ) -> ChatResult:
+        extra = {"max_tokens": max_tokens} if max_tokens else {}
         response = self._with_retries(
             lambda: self._client.chat.completions.create(
                 model=self._settings.chat_deployment,
                 messages=messages,
                 temperature=temperature,
+                **extra,
             )
         )
         choice = response.choices[0]
@@ -101,27 +112,28 @@ class ApiClient:
 
     # ------------------------------------------------------------------
     def _with_retries(self, call):
+        attempts = max(1, self._settings.max_retries)
         last_exc: Exception | None = None
-        for attempt in range(1, self._settings.max_retries + 1):
+        for attempt in range(1, attempts + 1):
             try:
                 return call()
-            except RateLimitError as exc:
+            except (RateLimitError, APITimeoutError, APIConnectionError) as exc:
                 last_exc = exc
-                self._sleep_backoff(attempt)
-            except (APITimeoutError, APIConnectionError) as exc:
-                last_exc = exc
-                self._sleep_backoff(attempt)
             except APIStatusError as exc:
                 # 5xx is worth retrying, 4xx (other than 429, handled above) is not.
-                if 500 <= exc.status_code < 600:
-                    last_exc = exc
-                    self._sleep_backoff(attempt)
-                else:
+                if exc.status_code == 400 and "content_filter" in str(exc.message):
+                    raise ApiContentFilterError(f"blocked by provider content filter: {exc.message}") from exc
+                if not 500 <= exc.status_code < 600:
                     raise ApiError(f"API returned {exc.status_code}: {exc.message}") from exc
+                last_exc = exc
+            if attempt < attempts:
+                self._sleep_backoff(attempt)
 
         if isinstance(last_exc, RateLimitError):
-            raise ApiRateLimitError(str(last_exc)) from last_exc
-        raise ApiTimeoutError(str(last_exc)) from last_exc
+            raise ApiRateLimitError(f"rate limited (429) after {attempts} attempts") from last_exc
+        if isinstance(last_exc, APIStatusError):
+            raise ApiError(f"API returned {last_exc.status_code} after {attempts} attempts") from last_exc
+        raise ApiTimeoutError(f"{last_exc} (after {attempts} attempts)") from last_exc
 
     @staticmethod
     def _sleep_backoff(attempt: int) -> None:

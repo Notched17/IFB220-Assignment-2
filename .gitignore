@@ -1,12 +1,21 @@
-
 __pycache__/
 *.pyc
 .pytest_cache/
-logs/*.jsonl
-logs/*.log
-topics/cache/
 .venv/
 
-# local / OS noise
+# secrets: never commit the real .env (only the placeholder example)
+.env
+.env.*
+!.env.example
+
+# runtime output
+logs/*.jsonl
+logs/*.log
+logs/*/
+topics/cache/
+*.zip
+
+# editor / OS / tooling noise
+.vscode/
 .DS_Store
 node_modules/

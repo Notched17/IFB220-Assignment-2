@@ -2,18 +2,22 @@
 """
 Entry point for the topic-constrained AI assistant.
 
-Usage:
+Usage (from any folder):
     python main.py
+    python /path/to/project/main.py
 
-Environment variables (see .env.example):
-    API_KEY                 (required) IFB220 Developer API Portal key
-    AZURE_OPENAI_BASE_URL   (required) IFB220 portal base URL, ending in /openai/
-    TOPIC_CONFIG            (optional) path to a topics/*.json file;
-                             defaults to topics/climbing.json.
-                             Point this at topics/motor_vehicles.json or
-                             topics/cinematography.json (or your own new
-                             file) to retopic the assistant with ZERO
-                             code changes.
+The only thing you need to provide is your IFB220 Developer API Portal key,
+either as the environment variable API_KEY or in a file called .env in the
+project folder:
+
+    API_KEY=your-key-here
+
+Everything else (portal URL, API version, model deployments, topic,
+guardrail and context settings) is preconfigured in app_config.json. To
+change the topic, edit "topic_config" in app_config.json to point at
+another topics/*.json file (e.g. topics/motor_vehicles.json) -- no code
+changes needed. Any setting can optionally be overridden by an
+environment variable (see src/config.py).
 
 In-chat commands:
     /usage   show a running total of API usage for this session
@@ -24,24 +28,33 @@ In-chat commands:
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
-from src.config import load_settings
-from src.pipeline import GuardedChatSession
-from src.topic import Topic
+# Make `src` importable however the script is launched (any working directory).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from src.config import ConfigError, env_overrides_in_use, load_settings  # noqa: E402
+from src.pipeline import GuardedChatSession  # noqa: E402
+from src.topic import Topic  # noqa: E402
 
 
 def main() -> int:
     try:
         settings = load_settings()
-    except EnvironmentError as exc:
+    except ConfigError as exc:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 1
 
     try:
         topic = Topic.load(settings.topic_config_path)
-    except (FileNotFoundError, ValueError) as exc:
-        print(f"Topic configuration error: {exc}", file=sys.stderr)
+    except (OSError, ValueError) as exc:
+        print(f"Topic configuration error: could not load {settings.topic_config_path}: {exc}",
+              file=sys.stderr)
         return 1
+
+    overrides = env_overrides_in_use()
+    if overrides:
+        print(f"(note: settings overridden by environment: {', '.join(overrides)})")
 
     print(f"=== {topic.display_name} ===")
     print("Ask me anything within scope. Type /quit to exit, /usage for usage stats.\n")

@@ -1,6 +1,8 @@
 """
 Guardrail Layers 2 (input) & 4 (output) -- semantic topic relevance,
-using Ada-002 embeddings.
+using embeddings (text-embedding-3-small on the IFB220 portal; the brief
+names Ada-002, which the portal returns 404 for -- both are 1536-dim
+OpenAI embedding models and the deployment is configurable).
 
 Why embeddings instead of a keyword list: a keyword/regex allow-list is
 trivially defeated by paraphrase ("what should I do about the thing on
@@ -9,7 +11,7 @@ keyword but is clearly in-scope; conversely a user can wrap an off-topic
 request in climbing-flavoured words). Comparing the MEANING of the input
 to a centroid built from representative on-topic sentences is far more
 robust to paraphrase in both directions, and it is exactly the kind of
-task Ada-002 embeddings are suited to -- which is also why the assignment
+task embedding models are suited to -- which is also why the assignment
 requires an embedding-based component in the first place.
 
 This module is used TWICE in the pipeline:
@@ -34,7 +36,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+import re
+
 from src.api_client import ApiClient
+from src.config import ensure_writable_dir
 from src.topic import Topic
 
 _CACHE_DIRNAME = "cache"
@@ -72,11 +77,18 @@ class TopicRelevanceChecker:
         topics_dir: Path,
         threshold: float,
         on_embedding_call: Callable[[int], None] | None = None,
+        embedding_model: str = "",
     ):
         self._api_client = api_client
         self._topic = topic
         self._threshold = threshold
-        self._cache_path = topics_dir / _CACHE_DIRNAME / f"{topic.topic_id}_centroid.json"
+        self._embedding_model = embedding_model
+        # The model name is part of the cache file name AND the stored hash,
+        # so switching embedding model can never reuse a stale centroid.
+        safe_model = re.sub(r"[^A-Za-z0-9._-]", "_", embedding_model) or "default"
+        self._cache_path = (
+            topics_dir / _CACHE_DIRNAME / f"{topic.topic_id}__{safe_model}_centroid.json"
+        )
         self._centroid: list[float] | None = None
         # Optional hook so the caller (the pipeline) can record accurate
         # embedding token usage for every embed() call this checker makes,
@@ -88,9 +100,12 @@ class TopicRelevanceChecker:
         if self._centroid is not None:
             return self._centroid
 
-        current_hash = self._topic.anchor_phrases_hash()
+        current_hash = self._topic.anchor_phrases_hash(self._embedding_model)
         if self._cache_path.exists():
-            cached = json.loads(self._cache_path.read_text(encoding="utf-8"))
+            try:
+                cached = json.loads(self._cache_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                cached = {}  # corrupt/unreadable cache: just rebuild it
             if cached.get("anchor_hash") == current_hash:
                 self._centroid = cached["centroid"]
                 return self._centroid
@@ -106,12 +121,22 @@ class TopicRelevanceChecker:
             vectors.append(result.vector)
         centroid = _mean_vector(vectors)
 
-        self._cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_dir = ensure_writable_dir(self._cache_path.parent, "topic_cache")
+        self._cache_path = cache_dir / self._cache_path.name
         self._cache_path.write_text(
-            json.dumps({"anchor_hash": current_hash, "centroid": centroid}), encoding="utf-8"
+            json.dumps({
+                "anchor_hash": current_hash,
+                "embedding_model": self._embedding_model,
+                "centroid": centroid,
+            }),
+            encoding="utf-8",
         )
         self._centroid = centroid
         return centroid
+
+    @property
+    def threshold(self) -> float:
+        return self._threshold
 
     def score(self, text: str) -> RelevanceResult:
         embedding = self._api_client.embed(text)

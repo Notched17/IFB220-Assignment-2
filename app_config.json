@@ -1,0 +1,26 @@
+{
+  "_comment": "Non-secret settings. The ONLY thing that must come from the environment (or a .env file in this folder) is API_KEY. Any key below can optionally be overridden by the environment variable named in src/config.py. To change the assistant's topic, point topic_config at another topics/*.json file.",
+
+  "base_url": "https://qut-ai.azure-api.net/ifb220/openai/",
+  "api_version": "2025-03-01-preview",
+  "chat_deployment": "gpt-4.1-mini",
+  "embedding_deployment": "text-embedding-3-small",
+
+  "topic_config": "topics/climbing.json",
+  "similarity_threshold_override": null,
+  "max_input_chars": 2000,
+  "check_output_topicality": true,
+
+  "max_context_turns": 6,
+  "max_context_tokens": 3000,
+
+  "request_timeout_s": 20,
+  "max_retries": 3,
+
+  "_cost_comment": "ILLUSTRATIVE rates in USD per 1k tokens (public OpenAI list prices for gpt-4.1-mini and text-embedding-3-small), not IFB220 portal billing figures.",
+  "chat_cost_per_1k_prompt": 0.0004,
+  "chat_cost_per_1k_completion": 0.0016,
+  "embedding_cost_per_1k": 0.00002,
+
+  "log_dir": "logs"
+}

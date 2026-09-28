@@ -1,6 +1,7 @@
 """
-Two separate logs, deliberately kept apart because they serve different
-audiences and have different retention/sensitivity considerations:
+Three separate logs, deliberately kept apart because they serve different
+audiences and have different retention/sensitivity considerations
+(logs/usage.jsonl, the per-API-call token log, lives in usage_monitor.py):
 
   * logs/audit.jsonl  -- one structured JSON record per user turn, with
     the outcome of every guardrail layer. This is what you'd hand to a
@@ -28,8 +29,11 @@ from pathlib import Path
 
 def build_error_logger(log_dir: Path) -> logging.Logger:
     log_dir.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger("ifb220_a2.errors")
+    # One logger per log directory, so a second session (or a test) writing
+    # to a different folder doesn't silently log into the first one's file.
+    logger = logging.getLogger(f"ifb220_a2.errors.{log_dir.resolve()}")
     logger.setLevel(logging.INFO)
+    logger.propagate = False
     if not logger.handlers:  # avoid duplicate handlers on repeated construction
         handler = RotatingFileHandler(
             log_dir / "errors.log", maxBytes=1_000_000, backupCount=3, encoding="utf-8"

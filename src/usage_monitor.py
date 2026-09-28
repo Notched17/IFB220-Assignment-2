@@ -19,6 +19,7 @@ from src.config import Settings
 @dataclass
 class UsageTotals:
     chat_calls: int = 0
+    judge_calls: int = 0  # subset of chat_calls made by the Layer 2b topic judge
     embedding_calls: int = 0
     prompt_tokens: int = 0
     completion_tokens: int = 0
@@ -45,12 +46,16 @@ class UsageMonitor:
     def totals(self) -> UsageTotals:
         return self._totals
 
-    def record_chat(self, prompt_tokens: int, completion_tokens: int) -> None:
+    def record_chat(self, prompt_tokens: int, completion_tokens: int, purpose: str = "chat") -> None:
+        """purpose is "chat" for the answer itself or "judge" for a Layer 2b
+        topic-judge classification call; both are billed chat completions."""
         self._totals.chat_calls += 1
+        if purpose == "judge":
+            self._totals.judge_calls += 1
         self._totals.prompt_tokens += prompt_tokens
         self._totals.completion_tokens += completion_tokens
         self._write({
-            "type": "chat",
+            "type": purpose,
             "prompt_tokens": prompt_tokens,
             "completion_tokens": completion_tokens,
         })
@@ -68,11 +73,11 @@ class UsageMonitor:
         t = self._totals
         cost = t.estimated_cost(self._settings)
         return (
-            f"chat calls: {t.chat_calls} | embedding calls: {t.embedding_calls} | "
+            f"chat calls: {t.chat_calls} (of which topic-judge: {t.judge_calls}) | embedding calls: {t.embedding_calls} | "
             f"prompt tokens: {t.prompt_tokens} | completion tokens: {t.completion_tokens} | "
             f"embedding tokens: {t.embedding_tokens} | "
             f"chat calls avoided by guardrails: {t.calls_skipped_by_guardrails} | "
-            f"estimated cost: ${cost:.4f}"
+            f"estimated cost: ${cost:.5f} (illustrative rates, see app_config.json)"
         )
 
     def _write(self, payload: dict) -> None:

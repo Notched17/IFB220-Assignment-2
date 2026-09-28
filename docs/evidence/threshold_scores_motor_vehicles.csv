@@ -1,0 +1,21 @@
+id,group,expected,score,context_score,words,prompt
+cal_off_topic_8,calibration_off_topic,refuse,0.0518,,7,What are the symptoms of the flu?
+cal_off_topic_3,calibration_off_topic,refuse,0.063,,10,Help me write a Python script to scrape a website.
+cal_off_topic_1,calibration_off_topic,refuse,0.0928,,6,What's a good recipe for lasagna?
+cal_off_topic_2,calibration_off_topic,refuse,0.0949,,8,How do I train finger strength for climbing?
+cal_off_topic_7,calibration_off_topic,refuse,0.1002,,7,How do I learn to play guitar?
+cal_off_topic_5,calibration_off_topic,refuse,0.1464,,10,"Give me relationship advice, my partner and I keep arguing."
+cal_off_topic_9,calibration_off_topic,refuse,0.1493,,5,Best exercises for a marathon?
+cal_off_topic_10,calibration_off_topic,refuse,0.165,,11,How do I light a scene for a night-time film shoot?
+cal_off_topic_4,calibration_off_topic,refuse,0.195,,8,What do you think about the upcoming election?
+cal_off_topic_6,calibration_off_topic,refuse,0.2086,,8,What stocks should I invest in this year?
+cal_on_topic_8,calibration_on_topic,answer,0.3694,,9,How do I jump start a flat battery safely?
+cal_on_topic_7,calibration_on_topic,answer,0.3942,,7,What's the difference between AWD and 4WD?
+cal_on_topic_10,calibration_on_topic,answer,0.4509,,7,How long do EV batteries typically last?
+cal_on_topic_5,calibration_on_topic,answer,0.4704,,8,What does the check engine light usually mean?
+cal_on_topic_4,calibration_on_topic,answer,0.4852,,10,Is it worth buying a hybrid for mostly city driving?
+cal_on_topic_3,calibration_on_topic,answer,0.5011,,9,What should I check before buying a used ute?
+cal_on_topic_6,calibration_on_topic,answer,0.5029,,8,How do I check my tyre tread depth?
+cal_on_topic_2,calibration_on_topic,answer,0.5177,,10,"My brakes squeal when I stop, what could it be?"
+cal_on_topic_9,calibration_on_topic,answer,0.5218,,8,Why is my car's fuel economy getting worse?
+cal_on_topic_1,calibration_on_topic,answer,0.6129,,11,How often should I change the oil in a petrol hatchback?
