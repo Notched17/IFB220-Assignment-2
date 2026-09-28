@@ -404,7 +404,7 @@ Real bugs found by running things rather than reading them:
 ```
 main.py                       CLI entry point (works from any folder)
 app_config.json               all non-secret settings (edit topic_config to retopic)
-.env.example                  the one required line: API_KEY=...
+.env                          the one required line: API_KEY=...
 make_zip.py                   builds the submission zip and checks it for secrets
 src/
   config.py                   env > app_config.json > DEFAULTS; API_KEY handling
@@ -420,7 +420,10 @@ src/
     injection_detector.py     Layer 1
     topic_relevance.py        Layers 2 and 4
     topic_judge.py            Layer 2b
-topics/                       climbing.json (default), motor_vehicles.json, cinematography.json
+topics/                       
+  climbing.json               (default topic that the chatbot will use)
+  motor_vehicles.json         (additional interchangable topic to use instead of the default topic (climbing.json) or secondary topic (cinematography.json))
+  cinematography.json         (additional interchangable topic to use instead of the default topic (climbing.json) or secondary topic (motor_vehicles.json))
 tests/
   test_*.py                   133 automated tests (no network)
   adversarial_prompts.json    54 prompts + 6 multi-turn scenarios, each with "expected"
@@ -428,8 +431,7 @@ tests/
   calibration_prompts.json    threshold calibration paraphrases (3 topics)
   score_topic_prompts.py      live score dump -> docs/evidence/threshold_scores*.csv
   demo_layer4.py              live Layer 4 demonstration
-  render_results_appendix.py  regenerates Appendix A below from the evidence
-docs/
+  render_results_appendix.py  regenerates Appendix A below from the evidence docs/
   TESTING.md                  methodology, results, bugs, calibration
   AI_USAGE.md                 detailed AI-use record
   evidence/                   raw outputs of every live run quoted in these docs
