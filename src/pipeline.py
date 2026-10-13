@@ -32,6 +32,7 @@ network error would hurt usability for little safety gain.
 
 from __future__ import annotations
 
+import re
 import time
 import uuid
 
@@ -40,6 +41,7 @@ from src.audit_logger import AuditLogger, build_error_logger
 from src.config import Settings
 from src.context_manager import ContextManager
 from src.guardrails import injection_detector, sanitizer, topic_judge
+from src.guardrails.segmenter import split_chunks, split_segments, word_count
 from src.guardrails.topic_relevance import TopicRelevanceChecker
 from src.prompt_builder import build_system_prompt
 from src.topic import Topic
@@ -52,6 +54,30 @@ GENERIC_ERROR_MESSAGE = (
 # Messages this short (in words) are often context-dependent follow-ups
 # ("thanks!", "how often?") that can't be judged on their own.
 SHORT_MESSAGE_WORDS = 8
+
+# Creative-writing requests ("write a poem / story / song / speech about...")
+# are sent to the judge whatever their embedding score: a single topic word
+# in the request ("mention a carabiner once") lifts an off-topic poem just
+# over the pass line, and only a reader of the whole sentence can tell a
+# poem ABOUT the topic from a poem about something else wearing a topic word.
+# Generic on purpose -- no topic words, no special case for any one form.
+_CREATIVE_REQUEST = re.compile(
+    r"\b(?:write|compose|create|draft|pen|make\s+up|come\s+up\s+with|give\s+me)\b.{0,60}?"
+    r"\b(?:poem|sonnet|haiku|limerick|verse|rap|song|lyrics|story|tale|fable|essay|speech|toast|"
+    r"script|screenplay|ode|ballad|joke|riddle|letter|monologue|dialogue)s?\b",
+    re.IGNORECASE,
+)
+# Same idea for a switch of TASK TYPE: asking for a different kind of
+# artefact (a recipe, code, an email, a translation, a business document)
+# with some topic context around it. Found when the scope guidance made the
+# model hand over a full pasta recipe framed as "carb loading" nutrition.
+_TASK_SWITCH_REQUEST = re.compile(
+    r"\b(?:write|compose|create|draft|give|send|make|need|want|show|build|code|translate|summari[sz]e)\b.{0,60}?"
+    r"\b(?:recipes?|cover\s+letter|business\s+plan|e-?mails?|resume|cv|contract|invoice|spreadsheet|"
+    r"python|javascript|sql|html|code|function|script|program|app|translation|summary\s+of\s+this)\b"
+    r"|\btranslate\b",
+    re.IGNORECASE,
+)
 
 
 class GuardedChatSession:
@@ -114,7 +140,7 @@ class GuardedChatSession:
         }
 
         # Layer 1: scan the cleaned text AND the extra views ------------
-        injection, view = self._scan_all_views(clean)
+        injection, view = self._scan_all_views(clean, self._topic.persona_roles)
         if clean.decoded_segments:
             # Decoded text that is itself an injection -> refuse here.
             # Decoded text that is harmless -> only flagged; later layers decide.
@@ -123,6 +149,7 @@ class GuardedChatSession:
             )
         layers["injection_detector"] = {
             "matched": injection.matched, "rule": injection.matched_rule, "view": view,
+            "soft_rules": list(injection.soft_rules),
         }
         if injection.matched:
             self._usage.record_skipped_by_guardrail(f"injection:{injection.matched_rule}")
@@ -131,7 +158,8 @@ class GuardedChatSession:
 
         # Layers 2 and 2b: is this on topic? -----------------------------
         try:
-            on_topic = self._input_is_on_topic(clean.text, layers)
+            on_topic = self._input_is_on_topic(clean.text, layers,
+                                               force_judge=bool(injection.soft_rules))
         except ApiError as exc:
             self._errors.error("embedding call failed on input relevance check: %s", exc)
             return self._finish(clean.text, "error", layers, start, GENERIC_ERROR_MESSAGE,
@@ -163,56 +191,116 @@ class GuardedChatSession:
         # Layer 4: re-check the model's own answer -----------------------
         if self._settings.check_output_topicality:
             try:
-                output_relevance = self._relevance.score(final_response)
+                final_response, refuse = self._check_output(final_response, layers)
             except ApiError as exc:
                 # Fail OPEN, but never silently (see module docstring).
                 self._errors.error(
                     "embedding call failed on output relevance check (failing open): %s", exc
                 )
                 layers["topic_relevance_output"] = {"error": str(exc), "decision": "fail_open"}
-                output_relevance = None
+                refuse = False
 
-            if output_relevance is not None:
-                layers["topic_relevance_output"] = {
-                    "score": round(output_relevance.score, 4),
-                    "passed": output_relevance.passed,
-                }
-                if not output_relevance.passed:
-                    self._errors.warning(
-                        "output relevance check rejected a model response (score=%.4f) -- "
-                        "possible upstream guardrail bypass",
-                        output_relevance.score,
-                    )
-                    self._context.add("user", clean.text)
-                    self._context.add("assistant", self._topic.refusal_message)
-                    return self._finish(
-                        clean.text, "refused_output", layers, start, self._topic.refusal_message
-                    )
+            if refuse:
+                self._errors.warning(
+                    "output relevance check rejected a model response (%s) -- "
+                    "possible upstream guardrail bypass",
+                    layers["topic_relevance_output"].get("decision"),
+                )
+                # The refused user text is kept for conversational coherence,
+                # but never in the recap (it did not pass the topic check).
+                self._context.add("user", clean.text, summary_text="")
+                self._context.add("assistant", self._topic.refusal_message)
+                return self._finish(
+                    clean.text, "refused_output", layers, start, self._topic.refusal_message
+                )
 
-        self._context.add("user", clean.text)
+        self._context.add("user", clean.text, summary_text=layers.get("_summary_text"))
         self._context.add("assistant", final_response)
         return self._finish(clean.text, "answered", layers, start, final_response)
 
     # ----------------------------------------------------------------
+    def _check_output(self, reply: str, layers: dict) -> tuple[str, bool]:
+        """Layer 4. Returns (reply to show, refuse?).
+
+        The whole reply is scored (as before) AND, when the topic sets
+        output_chunk_threshold, each paragraph-chunk is scored too -- all in
+        ONE embedding call. Red-team finding: a one-vector check let a short
+        off-topic tail ("bonus tip: brew kombucha...") ride on a long on-topic
+        answer.
+
+        Behaviour chosen for an off-topic chunk: REMOVE it and tell the user
+        briefly, rather than refusing the whole reply -- the rest of the
+        answer passed every layer and is what the user asked for, and a
+        mixed request ("answer my climbing question, and add X") is exactly
+        the case where the in-scope part should survive. If most of the reply
+        (more than half its words) is off-topic, the whole reply is refused
+        instead, because what would be left is not a real answer. Chunks
+        shorter than output_chunk_min_words (sign-offs, "Happy climbing!")
+        are never removed on their own: too little text to score reliably.
+        """
+        topic = self._topic
+        chunks = split_chunks(reply) if topic.output_chunk_threshold is not None else []
+        scored_chunks = chunks if len(chunks) > 1 else []
+        results = self._relevance.score_many([reply, *scored_chunks])
+        whole = results[0]
+        record: dict = {"score": round(whole.score, 4), "passed": whole.passed}
+        layers["topic_relevance_output"] = record
+        if not whole.passed:
+            record["decision"] = "refused_whole_reply"
+            return reply, True
+        if not scored_chunks or topic.output_chunk_threshold is None:
+            return reply, False
+
+        min_words = topic.output_chunk_min_words
+        off = [
+            i for i, (chunk, res) in enumerate(zip(scored_chunks, results[1:]))
+            if word_count(chunk) >= min_words and res.score < topic.output_chunk_threshold
+        ]
+        record["chunks"] = len(scored_chunks)
+        record["chunk_scores"] = [round(r.score, 4) for r in results[1:]]
+        if not off:
+            return reply, False
+        removed_words = sum(word_count(scored_chunks[i]) for i in off)
+        record["removed_chunks"] = off
+        record["removed_word_share"] = round(removed_words / max(1, word_count(reply)), 3)
+        if record["removed_word_share"] > 0.5:
+            record["decision"] = "refused_mostly_off_topic"
+            return reply, True
+        record["decision"] = "removed_off_topic_chunks"
+        kept = [c for i, c in enumerate(scored_chunks) if i not in off]
+        return "\n\n".join(kept) + f"\n\n{topic.partial_removal_note}", False
+
+    def _truncation_notice(self) -> str:
+        return (f"(Note: your message was longer than {self._settings.max_input_chars} characters, "
+                "so only the first part was read.)")
+
+    # ----------------------------------------------------------------
     @staticmethod
-    def _scan_all_views(clean: sanitizer.SanitizeResult):
+    def _scan_all_views(clean: sanitizer.SanitizeResult, allowed_roles: tuple[str, ...] = ()):
+        """Hard hit on any view -> refuse. Soft hits from every view are
+        collected and returned so the caller can route the turn to the judge."""
         views = [("cleaned", clean.text)]
         if clean.collapsed_text:
             views.append(("collapsed", clean.collapsed_text))
         views.extend(("base64_decoded", segment) for segment in clean.decoded_segments)
+        soft: list[str] = []
         for view, text in views:
-            result = injection_detector.scan(text)
+            result = injection_detector.scan(text, allowed_roles)
             if result.matched:
                 return result, view
-        return injection_detector.InjectionResult(matched=False, matched_rule=None), None
+            soft.extend(r for r in result.soft_rules if r not in soft)
+        return injection_detector.InjectionResult(False, None, tuple(soft)), None
 
-    def _input_is_on_topic(self, text: str, layers: dict) -> bool:
+    def _input_is_on_topic(self, text: str, layers: dict, force_judge: bool = False) -> bool:
         """Layer 2 (embedding score, with contextual scoring for follow-ups),
         then Layer 2b (LLM judge) if the score lands in the ambiguous band."""
         topic = self._topic
         plain = self._relevance.score(text)
         score = plain.score
         record = {"score": round(plain.score, 4), "passed": plain.passed}
+        if plain.centroid_score is not None:
+            record["centroid_score"] = round(plain.centroid_score, 4)
+            record["anchor_score"] = round(plain.anchor_score or 0.0, 4)
 
         # Contextual scoring (only reached by messages that passed Layer 1):
         # score the last two accepted user messages + this one together, so a
@@ -223,24 +311,42 @@ class GuardedChatSession:
         # ("banana bread recipe?") would ride on an on-topic history.
         short = len(text.split()) <= SHORT_MESSAGE_WORDS
         previous = self._context.recent_user_messages(2)
-        if topic.uses_judge and previous and (short or not plain.passed):
+        judge_low, judge_high = topic.judge_low, topic.judge_high  # None if the topic has no judge band
+        if judge_high is not None and previous and (short or not plain.passed):
             context_score = self._relevance.score("\n".join([*previous, text])).score
             record["context_score"] = round(context_score, 4)
-            score = max(score, min(context_score, topic.judge_high - 1e-6))
+            score = max(score, min(context_score, judge_high - 1e-6))
             record["used_context"] = score > plain.score
 
-        if not topic.uses_judge:
+        if judge_low is None or judge_high is None:
             record["passed"] = score >= self._relevance.threshold
             layers["topic_relevance_input"] = record
             return record["passed"]
 
-        if score >= topic.judge_high:
+        if score >= judge_high and force_judge:
+            # Borderline Layer 1 wording (soft rule): never auto-pass; the
+            # judge reads the whole sentence and decides.
+            record["band"] = "judge"
+            record["judge_reason"] = "soft_injection_wording"
+        elif score >= judge_high:
             record["band"] = "pass"
-        elif score < topic.judge_low:
+            reason = self._needs_judge_despite_high_score(text, record)
+            if reason:
+                record["band"] = "judge"
+                record["judge_reason"] = reason
+        elif score < judge_low and short:
+            # A very short message carries too little text for an embedding
+            # to judge ("flappers, tape or not?"), so instead of refusing on
+            # the score alone it goes to the judge, which still fails closed.
+            record["band"] = "judge"
+            record["judge_reason"] = "short_message"
+        elif score < judge_low:
             record["band"] = "refuse"
         else:
             record["band"] = "judge"
         record["passed"] = record["band"] == "pass"
+        if "_summary_text" in record:
+            layers["_summary_text"] = record.pop("_summary_text")
         layers["topic_relevance_input"] = record
         if record["band"] != "judge":
             return record["passed"]
@@ -255,6 +361,35 @@ class GuardedChatSession:
             "in_scope": verdict.in_scope, "reason": verdict.reason, "error": verdict.error,
         }
         return verdict.in_scope
+
+    def _needs_judge_despite_high_score(self, text: str, record: dict) -> str | None:
+        """Red-team round: a high WHOLE-message score can hide an off-topic
+        part. Returns why the judge should decide, or None to auto-pass.
+
+        * creative-writing and task-type-switch requests (see
+          _CREATIVE_REQUEST, _TASK_SWITCH_REQUEST);
+        * any sentence/clause scoring below judge_low on its own ("...plan,
+          and at the very end add a bonus tip on brewing kombucha"). The
+          segment score never REFUSES by itself -- a low-scoring clause can be
+          harmless context ("I work night shifts") -- it only takes away the
+          auto-pass. All segments are scored in one embedding call.
+        The in-scope segments are also remembered as the text this turn may
+        contribute to the recap (see ContextManager)."""
+        if _CREATIVE_REQUEST.search(text):
+            return "creative_writing"
+        if _TASK_SWITCH_REQUEST.search(text):
+            return "task_type_switch"
+        segments = split_segments(text)
+        if not segments:
+            return None
+        judge_low = self._topic.judge_low or 0.0
+        results = self._relevance.score_many(segments)
+        record["segment_scores"] = [round(r.score, 4) for r in results]
+        kept = [seg for seg, r in zip(segments, results) if r.score >= judge_low]
+        if len(kept) < len(segments):
+            record["_summary_text"] = " ".join(kept)
+            return "off_topic_segment"
+        return None
 
     def _build_messages(self, user_text: str) -> list[dict]:
         history = self._context.get_messages()
@@ -271,6 +406,12 @@ class GuardedChatSession:
 
     def _finish(self, user_text, action, layers, start, response, error=None) -> str:
         latency_ms = (time.perf_counter() - start) * 1000
+        layers.pop("_summary_text", None)  # internal hand-off, not audit data
+        if layers.get("sanitizer", {}).get("truncated"):
+            # Tell the user, on every outcome, that only part of a long
+            # message was read (red-team round: a long message's real
+            # question past the cut-off was silently dropped).
+            response = f"{self._truncation_notice()}\n\n{response}"
         self._audit.log_turn(
             session_id=self._session_id,
             turn_index=self._turn_index,

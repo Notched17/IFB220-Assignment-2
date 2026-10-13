@@ -12,6 +12,21 @@ Optional fields judge_low / judge_high define the "ambiguous" band of
 embedding scores that is sent to the Layer 2b LLM topic judge (see
 src/guardrails/topic_judge.py). Without them, similarity_threshold alone
 decides.
+
+Optional fields added after the red-team round (all have safe defaults, so
+an older topic file still loads):
+  * scope_notes    -- explicit boundary decisions in plain words (e.g. which
+                      side of the line a sponsorship letter falls). Shown to
+                      BOTH the chat model and the Layer 2b judge, so the two
+                      model layers apply the same scope.
+  * persona_roles  -- roles the user may ask the assistant to play ("act as my
+                      belayer") without that counting as a persona override
+                      in Layer 1.
+  * anchor_score_offset -- enables the closest-anchor score in Layers 2/4
+                      (see src/guardrails/topic_relevance.py).
+  * output_chunk_threshold / output_chunk_min_words / partial_removal_note
+                   -- per-paragraph Layer 4 (see GuardedChatSession._check_output).
+                      No threshold = whole-reply check only (original behaviour).
 """
 
 from __future__ import annotations
@@ -19,6 +34,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+
+
+DEFAULT_PARTIAL_REMOVAL_NOTE = (
+    "(I left out part of that answer because it was outside what I can help with here.)"
+)
 
 
 @dataclass(frozen=True)
@@ -34,6 +54,12 @@ class Topic:
     anchor_phrases: tuple[str, ...]
     judge_low: float | None = None
     judge_high: float | None = None
+    scope_notes: str = ""
+    persona_roles: tuple[str, ...] = ()
+    anchor_score_offset: float | None = None
+    output_chunk_threshold: float | None = None
+    output_chunk_min_words: int = 20
+    partial_removal_note: str = DEFAULT_PARTIAL_REMOVAL_NOTE
 
     @property
     def uses_judge(self) -> bool:
@@ -78,6 +104,14 @@ class Topic:
             anchor_phrases=tuple(data["anchor_phrases"]),
             judge_low=None if judge_low is None else float(judge_low),
             judge_high=None if judge_high is None else float(judge_high),
+            scope_notes=str(data.get("scope_notes", "")),
+            persona_roles=tuple(str(r) for r in data.get("persona_roles", [])),
+            anchor_score_offset=(None if data.get("anchor_score_offset") is None
+                                 else float(data["anchor_score_offset"])),
+            output_chunk_threshold=(None if data.get("output_chunk_threshold") is None
+                                    else float(data["output_chunk_threshold"])),
+            output_chunk_min_words=int(data.get("output_chunk_min_words", 20)),
+            partial_removal_note=str(data.get("partial_removal_note") or DEFAULT_PARTIAL_REMOVAL_NOTE),
         )
 
     def anchor_phrases_hash(self, embedding_model: str = "") -> str:

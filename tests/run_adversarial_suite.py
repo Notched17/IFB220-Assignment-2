@@ -66,14 +66,14 @@ EVIDENCE_DIR = ROOT / "docs" / "evidence"
 # ---------------------------------------------------------------------
 # Layers 0-1: always real, no API required.
 # ---------------------------------------------------------------------
-def layer_0_1_views(prompt: str):
+def layer_0_1_views(prompt: str, allowed_roles: tuple[str, ...] = ()):
     clean = sanitizer.sanitize(prompt, max_chars=2000)
     views = [("cleaned", clean.text)]
     if clean.collapsed_text:
         views.append(("collapsed", clean.collapsed_text))
     views += [("base64_decoded", seg) for seg in clean.decoded_segments]
     for view, text in views:
-        result = injection_detector.scan(text)
+        result = injection_detector.scan(text, allowed_roles)
         if result.matched:
             return result.matched_rule, view
     return None, None
@@ -84,8 +84,9 @@ def run_layer_0_1_report(prompts: list[dict]) -> tuple[int, int]:
     print("LAYER 0-1 REPORT (real sanitizer + injection detector, no API needed)")
     print("=" * 78)
     ok = total = 0
+    roles = Topic.load(ROOT / "topics" / "climbing.json").persona_roles
     for item in prompts:
-        rule, view = layer_0_1_views(item["prompt"])
+        rule, view = layer_0_1_views(item["prompt"], roles)
         must_match = item["expected_layer"].startswith("injection_detector")
         must_not_match = item["expected"] == "answer"
         if must_match or must_not_match:
@@ -117,12 +118,20 @@ class _FakeApiClient:
         def __init__(self, **kw):
             self.__dict__.update(kw)
 
-    def embed(self, text: str):
+    def _vector(self, text: str) -> tuple[list[float], int]:
         tokens = self._TOKEN_RE.findall(text.lower())
         vector = [0.0] * _HASH_DIM
         for tok in tokens:
             vector[hash(tok) % _HASH_DIM] += 1.0
-        return self._Result(vector=vector, total_tokens=len(tokens))
+        return vector, len(tokens)
+
+    def embed(self, text: str):
+        vector, n = self._vector(text)
+        return self._Result(vector=vector, total_tokens=n)
+
+    def embed_many(self, texts):
+        pairs = [self._vector(t) for t in texts]
+        return self._Result(vectors=[v for v, _ in pairs], total_tokens=sum(n for _, n in pairs))
 
     def chat_complete(self, messages, *, temperature=0.4, max_tokens=None):
         last_user = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
@@ -134,8 +143,8 @@ def make_session(settings: Settings, topic: Topic, live: bool) -> GuardedChatSes
     session = GuardedChatSession.create(settings, topic)
     if not live:  # test-only wiring: swap the network clients for the stand-in
         fake = _FakeApiClient()
-        session._api = fake
-        session._relevance._api_client = fake
+        session._api = fake # type: ignore[assignment]
+        session._relevance._api_client = fake # type: ignore[assignment]
         session._relevance._cache_path = session._relevance._cache_path.with_suffix(".offline.json")
     return session
 
@@ -324,7 +333,8 @@ def main() -> int:
     print("\nWhere attacks were stopped (from audit.jsonl):")
     for outcome, count in per_layer.most_common():
         print(f"  {outcome:32} {count}")
-    print(f"\nLast session usage: {last_session.usage_summary()}")
+    if last_session is not None:
+      print(f"\nLast session usage: {last_session.usage_summary()}")
     print(f"Usage log record types this run: {dict(usage)}")
 
     EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)

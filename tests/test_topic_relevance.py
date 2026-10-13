@@ -121,3 +121,58 @@ def test_corrupt_cache_file_is_rebuilt_not_fatal(tmp_path):
     result = TopicRelevanceChecker(fake_api, CLIMBING_TOPIC, tmp_path, threshold=0.5,
                                    embedding_model="m").score("query")
     assert result.passed is True
+
+
+# --- Red-team round: closest-anchor score and batch scoring --------------------
+from dataclasses import replace as _replace  # noqa: E402
+
+from src.api_client import EmbeddingBatch  # noqa: E402
+
+
+def _checker(tmp_path, vectors, offset):
+    topic = _replace(CLIMBING_TOPIC, anchor_phrases=("a1", "a2"), anchor_score_offset=offset)
+    api = MagicMock()
+    api.embed.side_effect = _fake_embed_factory(lambda t: vectors[t])
+    api.embed_many.side_effect = lambda texts: EmbeddingBatch([vectors[t] for t in texts], 7)
+    return TopicRelevanceChecker(api, topic, tmp_path, threshold=0.5), api
+
+
+def test_closest_anchor_score_lifts_text_that_matches_one_anchor(tmp_path):
+    # a1 and a2 point in different directions; "slang" matches a1 exactly but
+    # sits 45 degrees from the centroid.
+    vectors = {"a1": [1.0, 0.0], "a2": [0.0, 1.0], "slang": [1.0, 0.0]}
+    without, _ = _checker(tmp_path / "x", vectors, offset=None)
+    with_anchor, _ = _checker(tmp_path / "y", vectors, offset=0.15)
+    r0, r1 = without.score("slang"), with_anchor.score("slang")
+    assert abs(r0.score - 0.7071) < 1e-3                        # centroid only
+    assert r1.anchor_score is not None and abs(r1.anchor_score - 1.0) < 1e-9
+    assert abs(r1.score - 0.85) < 1e-9                          # max(0.707, 1.0 - 0.15)
+
+
+def test_offset_none_keeps_the_original_centroid_behaviour(tmp_path):
+    vectors = {"a1": [1.0, 0.0], "a2": [0.0, 1.0], "q": [0.0, 1.0]}
+    checker, _ = _checker(tmp_path, vectors, offset=None)
+    result = checker.score("q")
+    assert result.score == result.centroid_score
+
+
+def test_score_many_uses_one_embedding_call(tmp_path):
+    vectors = {"a1": [1.0, 0.0], "a2": [1.0, 0.0], "s1": [1.0, 0.0], "s2": [0.0, 1.0]}
+    calls = []
+    checker, api = _checker(tmp_path, vectors, offset=None)
+    checker._on_embedding_call = calls.append
+    results = checker.score_many(["s1", "s2"], threshold=0.5)
+    assert [r.passed for r in results] == [True, False]
+    assert api.embed_many.call_count == 1 and calls[0] == 7   # then the 2 one-off anchor builds
+    assert checker.score_many([]) == []
+
+
+def test_anchor_vectors_are_cached_with_the_centroid(tmp_path):
+    vectors = {"a1": [1.0, 0.0], "a2": [0.0, 1.0], "q": [1.0, 0.0]}
+    checker, api = _checker(tmp_path, vectors, offset=0.1)
+    checker.score("q")
+    cache = json.loads(next((tmp_path / "cache").glob("*.json")).read_text())
+    assert cache["anchor_vectors"] == [[1.0, 0.0], [0.0, 1.0]]
+    fresh, api2 = _checker(tmp_path, vectors, offset=0.1)
+    fresh.score("q")
+    assert [c.args[0] for c in api2.embed.call_args_list] == ["q"]   # anchors came from the cache

@@ -76,3 +76,56 @@ def test_injection_text_is_delimited_as_data_and_classifier_runs_deterministical
 def test_judge_messages_use_only_last_turns_given():
     messages = build_judge_messages(TOPIC, "x", [])
     assert "(none)" in messages[1]["content"]
+
+
+# --- Red-team round: judge and chat model share one scope definition ------------
+def test_judge_gets_the_same_scope_guidance_and_boundary_notes_as_the_chat_model():
+    from src.prompt_builder import SCOPE_GUIDANCE, build_system_prompt
+    judge_system = build_judge_messages(TOPIC, "anything", [])[0]["content"]
+    chat_system = build_system_prompt(TOPIC)
+    for text in (SCOPE_GUIDANCE, TOPIC.scope_notes, TOPIC.in_scope_summary, TOPIC.out_of_scope_note):
+        assert text and text in judge_system and text in chat_system
+
+
+def test_shared_scope_guidance_is_topic_neutral():
+    # Configuration-driven: nothing topic-specific may live in the shared code text.
+    from src.prompt_builder import SCOPE_GUIDANCE
+    judge_template = build_judge_messages(
+        replace_topic(in_scope_summary="X", out_of_scope_note="Y", scope_notes=""), "m", [])[0]["content"]
+    for word in ("climb", "belay", "vehicle", "film", "camera"):
+        assert word not in SCOPE_GUIDANCE.lower()
+        assert word not in judge_template.lower()
+
+
+def test_judge_explains_that_trigger_words_about_the_users_activity_are_not_instructions():
+    judge_system = build_judge_messages(TOPIC, "m", [])[0]["content"]
+    assert "NOT instructions to the assistant" in judge_system
+
+
+def replace_topic(**changes):
+    from dataclasses import replace
+    return replace(TOPIC, **changes)
+
+
+def test_every_topic_file_has_the_same_shape():
+    import json
+    topics_dir = Path(__file__).resolve().parent.parent / "topics"
+    shapes = {}
+    for path in sorted(topics_dir.glob("*.json")):
+        data = json.loads(path.read_text(encoding="utf-8"))
+        shapes[path.name] = set(data)
+        topic = Topic.load(path)
+        assert topic.scope_notes and topic.persona_roles
+    assert len({frozenset(s) for s in shapes.values()}) == 1, shapes
+
+
+def test_topic_without_new_optional_fields_still_loads(tmp_path):
+    import json
+    data = json.loads((Path(__file__).resolve().parent.parent / "topics" / "climbing.json").read_text())
+    for key in ("scope_notes", "persona_roles"):
+        data.pop(key)
+    path = tmp_path / "old.json"
+    path.write_text(json.dumps(data))
+    topic = Topic.load(path)
+    assert topic.scope_notes == "" and topic.persona_roles == ()
+    assert "Boundary decisions" not in build_judge_messages(topic, "m", [])[0]["content"]

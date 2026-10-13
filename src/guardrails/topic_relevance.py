@@ -47,8 +47,10 @@ _CACHE_DIRNAME = "cache"
 
 @dataclass
 class RelevanceResult:
-    score: float
+    score: float                       # the score the bands/thresholds use
     passed: bool
+    centroid_score: float | None = None  # cosine to the mean of the anchors
+    anchor_score: float | None = None    # cosine to the single closest anchor
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
@@ -67,8 +69,24 @@ def _mean_vector(vectors: list[list[float]]) -> list[float]:
 
 
 class TopicRelevanceChecker:
-    """Builds (and disk-caches) a topic centroid, then scores arbitrary
-    text against it. One instance is created per Topic at startup."""
+    """Builds (and disk-caches) a topic centroid plus the individual anchor
+    vectors, then scores arbitrary text against them. One instance is
+    created per Topic at startup.
+
+    Two similarities are computed for every text (red-team round):
+      * centroid_score -- cosine to the MEAN of the anchors. Good for
+        full-sentence questions, but a 3-word slang question ("flappers,
+        tape or not?") sits far from the mean of 40 full sentences.
+      * anchor_score   -- cosine to the CLOSEST single anchor, so a short
+        question only has to resemble one anchor (the topic file includes
+        short and slang anchors for this).
+    The score used for decisions is max(centroid_score, anchor_score -
+    topic.anchor_score_offset). The offset (measured live, see
+    docs/evidence/threshold_scores_round2.csv) is needed because the
+    closest-anchor similarity runs higher than the centroid similarity for
+    every text, on- or off-topic. If the topic has no offset, only the
+    centroid score is used (the original behaviour).
+    """
 
     def __init__(
         self,
@@ -90,6 +108,7 @@ class TopicRelevanceChecker:
             topics_dir / _CACHE_DIRNAME / f"{topic.topic_id}__{safe_model}_centroid.json"
         )
         self._centroid: list[float] | None = None
+        self._anchors: list[list[float]] = []
         # Optional hook so the caller (the pipeline) can record accurate
         # embedding token usage for every embed() call this checker makes,
         # including the one-off centroid-building calls -- without this
@@ -106,8 +125,9 @@ class TopicRelevanceChecker:
                 cached = json.loads(self._cache_path.read_text(encoding="utf-8"))
             except (OSError, ValueError):
                 cached = {}  # corrupt/unreadable cache: just rebuild it
-            if cached.get("anchor_hash") == current_hash:
+            if cached.get("anchor_hash") == current_hash and cached.get("anchor_vectors"):
                 self._centroid = cached["centroid"]
+                self._anchors = cached["anchor_vectors"]
                 return self._centroid
 
         # No valid cache: compute fresh from the topic's anchor phrases.
@@ -128,18 +148,37 @@ class TopicRelevanceChecker:
                 "anchor_hash": current_hash,
                 "embedding_model": self._embedding_model,
                 "centroid": centroid,
+                "anchor_vectors": vectors,
             }),
             encoding="utf-8",
         )
         self._centroid = centroid
+        self._anchors = vectors
         return centroid
 
     @property
     def threshold(self) -> float:
         return self._threshold
 
+    def score_vector(self, vector: list[float], threshold: float | None = None) -> RelevanceResult:
+        centroid = self.centroid()
+        centroid_score = _cosine(vector, centroid)
+        anchor_score = max((_cosine(vector, a) for a in self._anchors), default=centroid_score)
+        offset = self._topic.anchor_score_offset
+        combined = centroid_score if offset is None else max(centroid_score, anchor_score - offset)
+        limit = self._threshold if threshold is None else threshold
+        return RelevanceResult(score=combined, passed=combined >= limit,
+                               centroid_score=centroid_score, anchor_score=anchor_score)
+
     def score(self, text: str) -> RelevanceResult:
         embedding = self._api_client.embed(text)
         self._on_embedding_call(embedding.total_tokens)
-        similarity = _cosine(embedding.vector, self.centroid())
-        return RelevanceResult(score=similarity, passed=similarity >= self._threshold)
+        return self.score_vector(embedding.vector)
+
+    def score_many(self, texts: list[str], threshold: float | None = None) -> list[RelevanceResult]:
+        """Score several texts with ONE embedding call."""
+        if not texts:
+            return []
+        batch = self._api_client.embed_many(list(texts))
+        self._on_embedding_call(batch.total_tokens)
+        return [self.score_vector(v, threshold) for v in batch.vectors]

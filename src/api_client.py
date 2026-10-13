@@ -22,6 +22,9 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
+from typing import Any, cast
+from openai.types.chat import ChatCompletionMessageParam
+
 from openai import (
     APIConnectionError,
     APIStatusError,
@@ -60,6 +63,12 @@ class ChatResult:
 @dataclass
 class EmbeddingResult:
     vector: list[float]
+    total_tokens: int
+
+
+@dataclass
+class EmbeddingBatch:
+    vectors: list[list[float]]
     total_tokens: int
 
 
@@ -107,6 +116,23 @@ class ApiClient:
         usage = response.usage
         return EmbeddingResult(
             vector=response.data[0].embedding,
+            total_tokens=usage.total_tokens if usage else 0,
+        )
+
+    def embed_many(self, texts: list[str]) -> EmbeddingBatch:
+        """Embed several texts in ONE HTTP call (the embeddings endpoint
+        accepts a list). Used for per-segment / per-chunk scoring so that
+        scoring a 6-sentence message costs one call, not six."""
+        response = self._with_retries(
+            lambda: self._client.embeddings.create(
+                model=self._settings.embedding_deployment,
+                input=list(texts),
+            )
+        )
+        usage = response.usage
+        ordered = sorted(response.data, key=lambda d: d.index)
+        return EmbeddingBatch(
+            vectors=[d.embedding for d in ordered],
             total_tokens=usage.total_tokens if usage else 0,
         )
 

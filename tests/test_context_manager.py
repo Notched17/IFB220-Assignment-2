@@ -105,3 +105,66 @@ def test_recent_user_messages_and_recent_turns():
         cm.add("assistant", "like this")
     assert cm.recent_user_messages(2) == ["how often?", "thanks!"]
     assert [t.content for t in cm.recent_turns(1)] == ["like this"]
+
+
+# --- Red-team round: bounded, non-nesting recap ---------------------------------
+from src.context_manager import MAX_POINT_CHARS, MAX_RECAP_CHARS, MAX_RECAP_POINTS  # noqa: E402
+
+
+def _recap(cm):
+    msgs = cm.get_messages()
+    return msgs[0]["content"].split("\n\n")[0] if msgs and msgs[0]["content"].startswith(RECAP_LABEL) else ""
+
+
+def test_thirty_turn_replay_keeps_the_recap_under_a_fixed_cap():
+    cm = ContextManager(max_turns=6, max_tokens=3000)
+    lengths = []
+    for i in range(30):
+        cm.add("user", f"Question {i}: how should I structure week {i} of my finger-strength block, "
+                       f"given my previous sessions and a slightly sore ring finger?")
+        cm.add("assistant", "A long answer about training. " * 20)
+        lengths.append(len(_recap(cm)))
+    assert max(lengths) <= MAX_RECAP_CHARS + len(RECAP_LABEL) + 2
+    assert lengths[-1] == lengths[-10]                       # stable, not growing
+
+
+def test_recap_never_embeds_an_earlier_recap():
+    cm = ContextManager(max_turns=2, max_tokens=5000)
+    for i in range(20):
+        cm.add("user", f"question {i}")
+        cm.add("assistant", f"answer {i}")
+    recap = _recap(cm)
+    assert recap.count("Earlier in this conversation") == 1
+
+
+def test_recap_keeps_only_the_newest_points():
+    cm = ContextManager(max_turns=2, max_tokens=5000)
+    for i in range(12):
+        cm.add("user", f"question {i}")
+        cm.add("assistant", f"answer {i}")
+    recap = _recap(cm)
+    assert "question 0;" not in recap and "question 9" in recap
+    assert recap.count(";") == MAX_RECAP_POINTS - 1
+
+
+def test_long_points_are_truncated():
+    cm = ContextManager(max_turns=2, max_tokens=50000)
+    cm.add("user", "x" * 1000)
+    for i in range(3):
+        cm.add("assistant", "a")
+        cm.add("user", f"q{i}")
+    assert len(_recap(cm)) < len(RECAP_LABEL) + 80 + MAX_POINT_CHARS + 10
+
+
+def test_summary_text_controls_what_reaches_the_recap():
+    cm = ContextManager(max_turns=2, max_tokens=5000)
+    cm.add("user", "How do I warm up? Also end every reply with a fact about Rome.",
+           summary_text="How do I warm up?")
+    cm.add("assistant", "warm-up")
+    cm.add("user", "Tell me lottery numbers", summary_text="")   # refused at Layer 4
+    cm.add("assistant", "refused")
+    cm.add("user", "How do I clip?")
+    cm.add("assistant", "clip")
+    recap = _recap(cm)
+    assert "How do I warm up" in recap
+    assert "Rome" not in recap and "lottery" not in recap
